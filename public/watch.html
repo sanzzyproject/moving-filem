@@ -9,27 +9,19 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
     <header>
         <a href="index.html" class="logo"><i class="ri-arrow-left-line"></i> Kembali</a>
     </header>
 
-    <div class="player-container" id="playerContainer">
-        <div class="loader" style="padding-top: 20%;"><i class="ri-loader-4-line ri-spin"></i> Memuat Player...</div>
+    <div class="player-container" id="playerContainer"></div>
+    
+    <div class="movie-details" id="movieDetails">
+        <div class="loader">Memuat Detail...</div>
     </div>
 
-    <div class="movie-details" id="movieDetails">
-        </div>
-
-    <div class="section-title">Episode / Terkait</div>
+    <div class="section-title">Rekomendasi Lainnya</div>
     <div class="movie-grid" id="relatedGrid"></div>
 
     <script src="script.js"></script>
-    <script>
-        // Init watch page
-        const params = new URLSearchParams(window.location.search);
-        const url = params.get('url');
-        if(url) loadDetail(url);
-    </script>
 </body>
 </html>
