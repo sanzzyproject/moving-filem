@@ -5,150 +5,181 @@ const cheerio = require('cheerio');
 
 const app = express();
 
-// Konfigurasi CORS agar frontend bisa akses
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type']
 }));
 
-// --- CLASS SCRAPER (DIGABUNG DISINI) ---
+// --- KODE SCRAPER ANDA (DIINTEGRASIKAN) ---
 class KlikXXIScraper {
     constructor() {
         this.baseURL = 'https://klikxxi.me';
-        // User Agent yang lebih valid agar tidak di-blokir
-        this.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://klikxxi.me/',
-            'Connection': 'keep-alive'
-        };
+        this.client = axios.create({
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-Mode': 'navigate'
+            }
+        });
     }
 
+    // Fungsi Helper dari kode Anda
+    extractYear(title) {
+        const match = title.match(/\b(19|20)\d{2}\b/);
+        return match ? match[0] : null;
+    }
+
+    extractQualityFromText(text) {
+        const qualities = ['1080', '720', '480', '360', 'HD', 'HDTS', 'WEB-DL', 'BluRay'];
+        for (const quality of qualities) {
+            if (text.includes(quality)) {
+                return quality;
+            }
+        }
+        return 'HD';
+    }
+
+    // Fungsi Parsing (Dipakai untuk Search & Home)
+    parseList($, results) {
+        $('#gmr-main-load .item-infinite').each((index, element) => {
+            const item = $(element);
+            const title = item.find('.entry-title a').text().trim();
+            const url = item.find('.entry-title a').attr('href');
+            // Fix URL Gambar (kadang sudah http, kadang relative)
+            let rawThumb = item.find('img').attr('data-lazy-src') || item.find('img').attr('src');
+            let thumbnail = rawThumb;
+            if (rawThumb && !rawThumb.startsWith('http')) {
+                thumbnail = this.baseURL + rawThumb;
+            }
+
+            const rating = item.find('.gmr-rating-item').text().trim();
+            const duration = item.find('.gmr-duration-item').text().trim();
+            const quality = item.find('.gmr-quality-item').text().trim();
+            
+            const trailerBtn = item.find('.gmr-trailer-popup');
+            const trailerUrl = trailerBtn.length ? trailerBtn.attr('href') : null;
+
+            if(title && url) {
+                results.push({
+                    title,
+                    url,
+                    thumbnail,
+                    rating: rating.replace('icon_star', '').trim(),
+                    duration,
+                    quality,
+                    trailerUrl,
+                    year: this.extractYear(title)
+                });
+            }
+        });
+    }
+
+    // TAMBAHAN: Get Home (Menggunakan logika yg sama dgn Search agar Home muncul)
     async getHome() {
         try {
-            const response = await axios.get(this.baseURL, { headers: this.headers });
+            const response = await this.client.get(`${this.baseURL}/`);
             const $ = cheerio.load(response.data);
             const results = [];
-
-            // Selector disesuaikan dengan struktur klikxxi terbaru
-            $('#gmr-main-load .item-infinite').each((index, element) => {
-                const item = $(element);
-                const title = item.find('.entry-title a').text().trim();
-                const url = item.find('.entry-title a').attr('href');
-                let thumbnail = item.find('img').attr('data-lazy-src') || item.find('img').attr('src');
-                
-                // Fix thumbnail URL jika relative
-                if (thumbnail && !thumbnail.startsWith('http')) {
-                    thumbnail = thumbnail.startsWith('//') ? 'https:' + thumbnail : this.baseURL + thumbnail;
-                }
-
-                if (title && url) {
-                    results.push({
-                        title,
-                        url,
-                        thumbnail,
-                        rating: item.find('.gmr-rating-item').text().replace('icon_star', '').trim(),
-                        quality: item.find('.gmr-quality-item').text().trim(),
-                        duration: item.find('.gmr-duration-item').text().trim()
-                    });
-                }
-            });
+            this.parseList($, results);
             return { success: true, results };
         } catch (e) {
-            console.error("Scraper Error:", e.message);
-            return { success: false, message: e.message, results: [] };
+            console.error("Home Error:", e.message);
+            return { success: false, message: e.message };
         }
     }
 
+    // Kode Search Anda
     async search(query) {
         try {
             const params = new URLSearchParams();
             params.append('s', query);
             params.append('post_type[]', 'post');
-            
-            const response = await axios.get(`${this.baseURL}/`, { 
-                params, 
-                headers: this.headers 
-            });
-            
+            params.append('post_type[]', 'tv');
+            const response = await this.client.get(`${this.baseURL}/`, { params });
             const $ = cheerio.load(response.data);
             const results = [];
-
-            $('#gmr-main-load .item-infinite').each((index, element) => {
-                const item = $(element);
-                const title = item.find('.entry-title a').text().trim();
-                const url = item.find('.entry-title a').attr('href');
-                let thumbnail = item.find('img').attr('data-lazy-src') || item.find('img').attr('src');
-
-                 if (thumbnail && !thumbnail.startsWith('http')) {
-                    thumbnail = thumbnail.startsWith('//') ? 'https:' + thumbnail : this.baseURL + thumbnail;
-                }
-
-                results.push({
-                    title,
-                    url,
-                    thumbnail,
-                    quality: item.find('.gmr-quality-item').text().trim()
-                });
-            });
-            return { success: true, results };
+            this.parseList($, results);
+            return { success: true, query, total_results: results.length, results };
         } catch (e) {
             return { success: false, message: e.message };
         }
     }
 
+    // Kode GetDetail Anda
     async getDetail(url) {
         try {
-            const response = await axios.get(url, { headers: this.headers });
+            const response = await this.client.get(url);
             const $ = cheerio.load(response.data);
+            
+            let thumbRaw = $('.gmr-movie-data figure img').attr('data-lazy-src') || $('.gmr-movie-data figure img').attr('src');
+            let thumbnail = thumbRaw;
+             if (thumbRaw && !thumbRaw.startsWith('http')) {
+                thumbnail = this.baseURL + thumbRaw;
+            }
 
             const detail = {
                 title: $('.entry-title').text().trim(),
+                thumbnail: thumbnail,
+                rating: {
+                    value: $('.gmr-meta-rating span[itemprop="ratingValue"]').text().trim(),
+                    votes: $('.gmr-meta-rating span[itemprop="ratingCount"]').text().trim()
+                },
                 description: $('.entry-content p').first().text().trim(),
-                thumbnail: $('.gmr-movie-data figure img').attr('data-lazy-src') || $('.gmr-movie-data figure img').attr('src'),
                 metadata: {},
-                servers: [],
+                downloadLinks: [],
                 relatedMovies: [],
-                trailerUrl: $('a.gmr-trailer-popup').attr('href')
+                servers: []
             };
 
-            // Metadata info
             $('.gmr-moviedata').each((i, el) => {
-                const text = $(el).text();
-                if (text.includes('Genre')) detail.metadata.genres = $(el).find('a').map((i, e) => $(e).text()).get();
-                if (text.includes('Duration')) detail.metadata.duration = $(el).text().replace('Duration:', '').trim();
-                if (text.includes('Quality')) detail.metadata.quality = $(el).find('a').text().trim();
-                if (text.includes('Year')) detail.metadata.year = $(el).find('a').text().trim();
+                const $el = $(el);
+                const label = $el.find('strong').text().replace(':', '').trim().toLowerCase();
+                // Parsing metadata sederhana
+                if(label.includes('genre')) detail.metadata.genres = $el.find('a').map((i,e)=>$(e).text()).get();
+                if(label.includes('duration')) detail.metadata.duration = $el.text().replace('Duration','').replace(':','').trim();
+                if(label.includes('quality')) detail.metadata.quality = $el.find('a').text().trim();
+                if(label.includes('year')) detail.metadata.year = $el.find('a').text().trim();
             });
 
-            // Get Stream Links (Tabs)
-            $('.muvipro-player-tabs li a').each((i, el) => {
-                detail.servers.push({
-                    name: $(el).text().trim(),
-                    id: $(el).attr('href') // Biasanya ID tab
-                });
-            });
-
-            // Related Movies
+            // Related
             $('.gmr-grid.idmuvi-core .item').each((i, el) => {
                 const $el = $(el);
+                let relThumb = $el.find('img').attr('data-lazy-src') || $el.find('img').attr('src');
+                if(relThumb && !relThumb.startsWith('http')) relThumb = this.baseURL + relThumb;
+
                 detail.relatedMovies.push({
                     title: $el.find('.entry-title a').text().trim(),
                     url: $el.find('.entry-title a').attr('href'),
-                    thumbnail: $el.find('img').attr('data-lazy-src') || $el.find('img').attr('src')
+                    thumbnail: relThumb,
+                    year: this.extractYear($el.find('.entry-title a').text().trim())
                 });
             });
 
-            return { success: true, detail };
+            // Servers (Tab ID)
+            $('.muvipro-player-tabs li a').each((i, el) => {
+                const $el = $(el);
+                detail.servers.push({
+                    name: $el.text().trim(),
+                    id: $el.attr('id'),
+                    tabId: $el.attr('href')
+                });
+            });
+
+            const trailerBtn = $('a.gmr-trailer-popup[title*="Trailer"]');
+            if (trailerBtn.length) detail.trailerUrl = trailerBtn.attr('href');
+
+            return { success: true, url, detail };
         } catch (e) {
+            console.error(e);
             return { success: false, message: e.message };
         }
     }
 }
 
-// --- API ROUTES ---
+// --- SETUP ROUTE EXPRESS ---
 const scraper = new KlikXXIScraper();
 
 app.get('/api/home', async (req, res) => {
